@@ -14,7 +14,7 @@ fn main() {
             Ok(mut _stream) => {
                 println!("accepted new connection");
 
-                let mut buf = [0; 10];
+                let mut buf = [0; 128];
                 _stream.read(&mut buf).unwrap();
 
                 let command = std::str::from_utf8(&buf).unwrap();
