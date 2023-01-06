@@ -1,6 +1,8 @@
 // Uncomment this block to pass the first stage
 use std::{net::TcpListener, io::{Read, Write}};
 
+use bytes::buf;
+
 fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     println!("Logs from your program will appear here!");
@@ -15,7 +17,10 @@ fn main() {
                 println!("accepted new connection");
                 let mut buffer = String::new();
                 _stream.read_to_string(&mut buffer).unwrap();
-                if buffer.as_str() == "PING" {
+                let s = buffer.as_str();
+                println!("Received: {}", s);
+                if buffer.as_str().starts_with("PING") {
+                    println!("PING!");
                     _stream.write("+PONG\r\n".as_bytes()).unwrap();
                 }
             }
