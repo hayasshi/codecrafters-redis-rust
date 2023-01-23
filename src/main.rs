@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 
 use anyhow::{Result, bail};
 
-use crate::RESP::SimpleString;
+use crate::RESP::*;
 
 #[derive(Debug)]
 enum RESP {
@@ -30,14 +30,7 @@ fn main() -> Result<()> {
 
                 let resp = parse_resp(&mut _stream)?;
                 println!("RESP={:?}", resp);
-                match resp {
-                    SimpleString(s) => {
-                        if s.as_str() == "PING" {
-                            _stream.write("+PONG\r\n".as_bytes()).unwrap();
-                        }
-                    },
-                    _ => todo!()
-                }
+                action_resp(resp, &mut _stream)?;
             },
             Err(e) => {
                 println!("error: {}", e);
@@ -46,6 +39,24 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn action_resp(resp: RESP, write: &mut impl Write) -> Result<()> {
+    match resp {
+        Arrays(commands) => {
+            for command in commands {
+                action_resp(command, write)?;
+            }
+            Ok(())
+        },
+        SimpleString(s) => {
+            if s.as_str() == "ping" {
+                write.write("+pong\r\n".as_bytes()).unwrap();
+            }
+            Ok(())
+        },
+        _ => todo!()
+    }
 }
 
 fn parse_resp(read: &mut impl Read) -> Result<RESP> {
