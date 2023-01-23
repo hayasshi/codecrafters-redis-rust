@@ -6,6 +6,7 @@ use anyhow::{Result, bail};
 
 use crate::RESP::SimpleString;
 
+#[derive(Debug)]
 enum RESP {
     SimpleString(String),
     Errors(String),
@@ -28,6 +29,7 @@ fn main() -> Result<()> {
                 println!("accepted new connection");
 
                 let resp = parse_resp(&mut _stream)?;
+                println!("RESP={:?}", resp);
                 match resp {
                     SimpleString(s) => {
                         if s.as_str() == "PING" {
