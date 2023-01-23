@@ -56,6 +56,12 @@ fn action_resp(resp: RESP, write: &mut impl Write) -> Result<()> {
             }
             Ok(())
         },
+        BulkString(Some(s)) => {
+            if s.as_str() == "ping" {
+                write.write("+pong\r\n".as_bytes()).unwrap();
+            }
+            Ok(())
+        }
         _ => todo!()
     }
 }
