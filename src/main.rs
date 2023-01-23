@@ -42,6 +42,7 @@ fn main() -> Result<()> {
 }
 
 fn action_resp(resp: RESP, write: &mut impl Write) -> Result<()> {
+    println!("[action_resp] input: {:?}", resp);
     match resp {
         Arrays(commands) => {
             for command in commands {
