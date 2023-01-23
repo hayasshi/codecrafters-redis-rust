@@ -51,14 +51,14 @@ fn action_resp(resp: RESP, write: &mut impl Write) -> Result<()> {
             Ok(())
         },
         SimpleString(s) => {
-            if s.as_str() == "ping" {
-                write.write("+pong\r\n".as_bytes()).unwrap();
+            if s.as_str().to_uppercase() == "PING" {
+                write.write("+PONG\r\n".as_bytes()).unwrap();
             }
             Ok(())
         },
         BulkString(Some(s)) => {
-            if s.as_str() == "ping" {
-                write.write("+pong\r\n".as_bytes()).unwrap();
+            if s.as_str().to_uppercase() == "PING" {
+                write.write("+PONG\r\n".as_bytes()).unwrap();
             }
             Ok(())
         }
