@@ -6,13 +6,14 @@ use anyhow::{Result, bail};
 
 use crate::RESP::*;
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 enum RESP {
     SimpleString(String),
     Errors(String),
     Integers(i64),
     BulkString(Option<String>),
-    Arrays(Vec<RESP>)
+    Arrays(Vec<RESP>),
+    Empty
 }
 
 fn main() -> Result<()> {
@@ -28,9 +29,20 @@ fn main() -> Result<()> {
             Ok(mut _stream) => {
                 println!("accepted new connection");
 
-                let resp = parse_resp(&mut _stream)?;
-                println!("RESP={:?}", resp);
-                action_resp(resp, &mut _stream)?;
+                loop {
+                    let resp = match parse_resp(&mut _stream) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            println!("error: {}", e);
+                            RESP::Empty
+                        }
+                    };
+                    if resp == RESP::Empty {
+                        break;
+                    }
+                    println!("RESP={:?}", resp);
+                    action_resp(resp, &mut _stream)?;
+                }
             },
             Err(e) => {
                 println!("error: {}", e);
