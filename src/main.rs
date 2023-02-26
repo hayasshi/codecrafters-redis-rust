@@ -1,6 +1,7 @@
 // Uncomment this block to pass the first stage
 use std::net::TcpListener;
 use std::io::{Read, Write};
+use std::thread;
 
 use anyhow::{Result, bail};
 
@@ -27,22 +28,24 @@ fn main() -> Result<()> {
     for stream in listener.incoming() {
         match stream {
             Ok(mut _stream) => {
-                println!("accepted new connection");
+                thread::spawn(move || {
+                    println!("accepted new connection");
 
-                loop {
-                    let resp = match parse_resp(&mut _stream) {
-                        Ok(r) => r,
-                        Err(e) => {
-                            println!("error: {}", e);
-                            RESP::Empty
+                    loop {
+                        let resp = match parse_resp(&mut _stream) {
+                            Ok(r) => r,
+                            Err(e) => {
+                                println!("error: {}", e);
+                                RESP::Empty
+                            }
+                        };
+                        if resp == RESP::Empty {
+                            break;
                         }
-                    };
-                    if resp == RESP::Empty {
-                        break;
+                        println!("RESP={:?}", resp);
+                        action_resp(resp, &mut _stream).unwrap();
                     }
-                    println!("RESP={:?}", resp);
-                    action_resp(resp, &mut _stream)?;
-                }
+                });
             },
             Err(e) => {
                 println!("error: {}", e);
