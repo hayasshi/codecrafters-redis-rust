@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 // Uncomment this block to pass the first stage
 use std::net::TcpListener;
 use std::io::{Read, Write};
@@ -13,7 +14,7 @@ enum RESP {
     Errors(String),
     Integers(i64),
     BulkString(Option<String>),
-    Arrays(Vec<RESP>),
+    Arrays(VecDeque<RESP>),
     Empty
 }
 
@@ -59,26 +60,62 @@ fn main() -> Result<()> {
 fn action_resp(resp: RESP, write: &mut impl Write) -> Result<()> {
     println!("[action_resp] input: {:?}", resp);
     match resp {
-        Arrays(commands) => {
-            for command in commands {
-                action_resp(command, write)?;
-            }
-            Ok(())
+        Arrays(mut commands) => {
+            action_commands(&mut commands, write)
         },
-        SimpleString(s) => {
-            if s.as_str().to_uppercase() == "PING" {
-                write.write("+PONG\r\n".as_bytes()).unwrap();
-            }
-            Ok(())
-        },
-        BulkString(Some(s)) => {
-            if s.as_str().to_uppercase() == "PING" {
-                write.write("+PONG\r\n".as_bytes()).unwrap();
-            }
-            Ok(())
+        other => {
+            let mut commands = VecDeque::<RESP>::new();
+            commands.push_back(other);
+            action_commands(&mut commands, write)
         }
-        _ => todo!()
     }
+}
+
+fn action_commands(commands: &mut VecDeque<RESP>, write: &mut impl Write) -> Result<()> {
+    while !commands.is_empty() {
+        match commands.pop_front().unwrap() {
+            SimpleString(s) => {
+                match s.to_uppercase().as_str() {
+                    "PING" => {
+                        write.write("+PONG\r\n".as_bytes()).unwrap();
+                    },
+                    "ECHO" => {
+                        match commands.pop_front().unwrap() {
+                            SimpleString(s) => {
+                                write.write(format!("+{}\r\n", s).as_bytes()).unwrap();
+                            },
+                            BulkString(Some(s)) => {
+                                write.write(format!("+{}\r\n", s).as_bytes()).unwrap();
+                            },
+                            _ => panic!("Unexpected")
+                        }
+                    },
+                    _ => panic!("Unexpected")
+                }
+            },
+            BulkString(Some(s)) => {
+                match s.to_uppercase().as_str() {
+                    "PING" => {
+                        write.write("+PONG\r\n".as_bytes()).unwrap();
+                    },
+                    "ECHO" => {
+                        match commands.pop_front().unwrap() {
+                            SimpleString(s) => {
+                                write.write(format!("+{}\r\n", s).as_bytes()).unwrap();
+                            },
+                            BulkString(Some(s)) => {
+                                write.write(format!("+{}\r\n", s).as_bytes()).unwrap();
+                            },
+                            _ => panic!("Unexpected")
+                        }
+                    },
+                    _ => panic!("Unexpected")
+                }
+            },
+            _ => todo!()
+        }
+    }
+    Ok(())
 }
 
 fn parse_resp(read: &mut impl Read) -> Result<RESP> {
@@ -174,10 +211,10 @@ fn parse_arrays(read: &mut impl Read) -> Result<RESP> {
             if n < 0 {
                 Ok(RESP::Errors(String::from("()")))
             } else {
-                let mut resps: Vec<RESP> = Vec::new();
+                let mut resps: VecDeque<RESP> = VecDeque::new();
                 for _ in 1..=n {
                     let resp = parse_resp(read)?;
-                    resps.push(resp);
+                    resps.push_back(resp);
                 }
                 Ok(RESP::Arrays(resps))
             }
