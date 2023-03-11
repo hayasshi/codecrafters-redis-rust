@@ -72,45 +72,45 @@ fn action_resp(resp: RESP, write: &mut impl Write) -> Result<()> {
 }
 
 fn action_commands(commands: &mut VecDeque<RESP>, write: &mut impl Write) -> Result<()> {
+
+    fn inner(command: String, lest: &mut VecDeque<RESP>, write: &mut impl Write) -> Result<()> {
+        match command.to_uppercase().as_str() {
+            "PING" => {
+                do_ping(write)
+            },
+            "ECHO" => {
+                do_echo(lest.pop_front().unwrap(), write)
+            },
+            _ => panic!("Unexpected")
+        }
+
+    }
+
+    fn do_ping(write: &mut impl Write) -> Result<()> {
+        write.write("+PONG\r\n".as_bytes())?;
+        Ok(())
+    }
+
+    fn do_echo(value: RESP, write: &mut impl Write) -> Result<()> {
+        match value {
+            SimpleString(s) => {
+                write.write(format!("+{}\r\n", s).as_bytes())?;
+            },
+            BulkString(Some(s)) => {
+                write.write(format!("+{}\r\n", s).as_bytes())?;
+            },
+            _ => panic!("Unexpected")
+        }
+        Ok(())
+    }
+
     while !commands.is_empty() {
         match commands.pop_front().unwrap() {
             SimpleString(s) => {
-                match s.to_uppercase().as_str() {
-                    "PING" => {
-                        write.write("+PONG\r\n".as_bytes()).unwrap();
-                    },
-                    "ECHO" => {
-                        match commands.pop_front().unwrap() {
-                            SimpleString(s) => {
-                                write.write(format!("+{}\r\n", s).as_bytes()).unwrap();
-                            },
-                            BulkString(Some(s)) => {
-                                write.write(format!("+{}\r\n", s).as_bytes()).unwrap();
-                            },
-                            _ => panic!("Unexpected")
-                        }
-                    },
-                    _ => panic!("Unexpected")
-                }
+                inner(s, commands, write)?;
             },
             BulkString(Some(s)) => {
-                match s.to_uppercase().as_str() {
-                    "PING" => {
-                        write.write("+PONG\r\n".as_bytes()).unwrap();
-                    },
-                    "ECHO" => {
-                        match commands.pop_front().unwrap() {
-                            SimpleString(s) => {
-                                write.write(format!("+{}\r\n", s).as_bytes()).unwrap();
-                            },
-                            BulkString(Some(s)) => {
-                                write.write(format!("+{}\r\n", s).as_bytes()).unwrap();
-                            },
-                            _ => panic!("Unexpected")
-                        }
-                    },
-                    _ => panic!("Unexpected")
-                }
+                inner(s, commands, write)?;
             },
             _ => todo!()
         }
