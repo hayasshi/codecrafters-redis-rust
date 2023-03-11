@@ -2,9 +2,11 @@ use std::collections::VecDeque;
 // Uncomment this block to pass the first stage
 use std::net::TcpListener;
 use std::io::{Read, Write};
+use std::sync::{Arc, Mutex};
 use std::thread;
+use std::collections::HashMap;
 
-use anyhow::{Result, bail};
+use anyhow::{Result, bail, anyhow};
 
 use crate::RESP::*;
 
@@ -25,10 +27,13 @@ fn main() -> Result<()> {
     // Uncomment this block to pass the first stage
     //
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
+
+    let storage: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
     
     for stream in listener.incoming() {
         match stream {
             Ok(mut _stream) => {
+                let mut storage = Arc::clone(&storage);
                 thread::spawn(move || {
                     println!("accepted new connection");
 
@@ -44,7 +49,7 @@ fn main() -> Result<()> {
                             break;
                         }
                         println!("RESP={:?}", resp);
-                        action_resp(resp, &mut _stream).unwrap();
+                        action_resp(resp, &mut _stream, &mut storage).unwrap();
                     }
                 });
             },
@@ -57,23 +62,35 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn action_resp(resp: RESP, write: &mut impl Write) -> Result<()> {
+fn action_resp(resp: RESP, write: &mut impl Write, storage: &mut Arc<Mutex<HashMap<String, String>>>) -> Result<()> {
     println!("[action_resp] input: {:?}", resp);
     match resp {
         Arrays(mut commands) => {
-            action_commands(&mut commands, write)
+            action_commands(&mut commands, write, storage)
         },
         other => {
             let mut commands = VecDeque::<RESP>::new();
             commands.push_back(other);
-            action_commands(&mut commands, write)
+            action_commands(&mut commands, write, storage)
         }
     }
 }
 
-fn action_commands(commands: &mut VecDeque<RESP>, write: &mut impl Write) -> Result<()> {
+fn action_commands(commands: &mut VecDeque<RESP>, write: &mut impl Write, storage: &mut Arc<Mutex<HashMap<String, String>>>) -> Result<()> {
 
-    fn inner(command: String, lest: &mut VecDeque<RESP>, write: &mut impl Write) -> Result<()> {
+    fn extract_string(resp: RESP) -> Result<String> {
+        match resp {
+            SimpleString(s) => {
+                Ok(s)
+            },
+            BulkString(Some(s)) => {
+                Ok(s)
+            },
+            _ => bail!(format!("Unexpected RESP type: {:?}", resp))
+        }
+    }
+
+    fn inner(command: String, lest: &mut VecDeque<RESP>, write: &mut impl Write, storage: &mut Arc<Mutex<HashMap<String, String>>>) -> Result<()> {
         match command.to_uppercase().as_str() {
             "PING" => {
                 do_ping(write)
@@ -81,9 +98,14 @@ fn action_commands(commands: &mut VecDeque<RESP>, write: &mut impl Write) -> Res
             "ECHO" => {
                 do_echo(lest.pop_front().unwrap(), write)
             },
+            "SET" => {
+                do_set(lest, write, storage)
+            },
+            "GET" => {
+                do_get(lest, write, storage)
+            }
             _ => panic!("Unexpected")
         }
-
     }
 
     fn do_ping(write: &mut impl Write) -> Result<()> {
@@ -92,14 +114,38 @@ fn action_commands(commands: &mut VecDeque<RESP>, write: &mut impl Write) -> Res
     }
 
     fn do_echo(value: RESP, write: &mut impl Write) -> Result<()> {
-        match value {
-            SimpleString(s) => {
-                write.write(format!("+{}\r\n", s).as_bytes())?;
+        let s = extract_string(value)?;
+        write.write(format!("+{}\r\n", s).as_bytes())?;
+        Ok(())
+    }
+
+    fn do_set(lest: &mut VecDeque<RESP>, write: &mut impl Write, storage: &mut Arc<Mutex<HashMap<String, String>>>) -> Result<()> {
+        let key_resp =  lest.pop_front().ok_or(anyhow!("Unexpected RESP structure"))?;
+        let key = extract_string(key_resp)?;
+        let value_resp =  lest.pop_front().ok_or(anyhow!("Unexpected RESP structure"))?;
+        let value = extract_string(value_resp)?;
+
+        let mut storage = storage.lock().unwrap();
+        storage.insert(key, value);
+
+        write.write("$2\r\nOK\r\n".as_bytes())?;
+        Ok(())
+    }
+
+    fn do_get(lest: &mut VecDeque<RESP>, write: &mut impl Write, storage: &mut Arc<Mutex<HashMap<String, String>>>) -> Result<()> {
+        let key_resp =  lest.pop_front().ok_or(anyhow!("Unexpected RESP structure"))?;
+        let key = extract_string(key_resp)?;
+
+        let storage = storage.lock().unwrap();
+
+        match storage.get(&key) {
+            Some(value) => {
+                let size = value.chars().count();
+                write.write(format!("${}\r\n{}\r\n", size, value).as_bytes())?;
             },
-            BulkString(Some(s)) => {
-                write.write(format!("+{}\r\n", s).as_bytes())?;
-            },
-            _ => panic!("Unexpected")
+            None => {
+                write.write("$-1\r\n".as_bytes())?;
+            }
         }
         Ok(())
     }
@@ -107,10 +153,10 @@ fn action_commands(commands: &mut VecDeque<RESP>, write: &mut impl Write) -> Res
     while !commands.is_empty() {
         match commands.pop_front().unwrap() {
             SimpleString(s) => {
-                inner(s, commands, write)?;
+                inner(s, commands, write, storage)?;
             },
             BulkString(Some(s)) => {
-                inner(s, commands, write)?;
+                inner(s, commands, write, storage)?;
             },
             _ => todo!()
         }
